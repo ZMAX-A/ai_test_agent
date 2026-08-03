@@ -1,0 +1,150 @@
+{
+  "点击百度一下按钮|https://www.baidu.com/": {
+    "goal": "点击百度一下按钮",
+    "base_url": "https://www.baidu.com/",
+    "url": "https://www.baidu.com/",
+    "action": {
+      "thought": "页面中存在按钮'百度一下'，直接点击达成目标。",
+      "action": "click",
+      "parameters": {
+        "locator_strategy": "role",
+        "role": "button",
+        "name": "百度一下"
+      }
+    },
+    "created_at": 1784007638.2392666,
+    "degraded": false
+  },
+  "点击登录按钮|https://www.baidu.com/": {
+    "goal": "点击登录按钮",
+    "base_url": "https://www.baidu.com/",
+    "url": "https://www.baidu.com/",
+    "action": {
+      "thought": "页面中存在名为'登录'的链接，点击它即可跳转到登录页面。",
+      "action": "click",
+      "parameters": {
+        "locator_strategy": "role",
+        "role": "link",
+        "name": "登录"
+      }
+    },
+    "created_at": 1784016971.6747499,
+    "degraded": false
+  },
+  "点击登录按钮|https://m3dtest-yanjia-ai.xiaofutech.com/login": {
+    "goal": "点击登录按钮",
+    "base_url": "https://m3dtest-yanjia-ai.xiaofutech.com/login",
+    "url": "https://m3dtest-yanjia-ai.xiaofutech.com/login",
+    "action": {
+      "thought": "页面中存在button '登 录'，点击该按钮完成目标。",
+      "action": "click",
+      "parameters": {
+        "locator_strategy": "role",
+        "role": "button",
+        "name": "登 录"
+      }
+    },
+    "created_at": 1784017282.840604,
+    "degraded": false
+  },
+  "在用户名输入框(第1个)输入 |https://m3dtest-yanjia-ai.xiaofutech.com/login": {
+    "goal": "在用户名输入框(第1个)输入 ",
+    "base_url": "https://m3dtest-yanjia-ai.xiaofutech.com/login",
+    "url": "https://m3dtest-yanjia-ai.xiaofutech.com/login",
+    "action": {
+      "thought": "目标是在第1个用户名输入框输入内容，但未指定具体值。根据常见测试场景，先假设输入'admin'。",
+      "action": "fill",
+      "parameters": {
+        "locator_strategy": "role",
+        "role": "textbox",
+        "index": 0,
+        "value": "admin"
+      }
+    },
+    "created_at": 1784019445.9712865,
+    "degraded": false
+  },
+  "在密码输入框(第2个)输入 |https://m3dtest-yanjia-ai.xiaofutech.com/login": {
+    "goal": "在密码输入框(第2个)输入 ",
+    "base_url": "https://m3dtest-yanjia-ai.xiaofutech.com/login",
+    "url": "https://m3dtest-yanjia-ai.xiaofutech.com/login",
+    "action": {
+      "thought": "需要在第二个文本框（密码框）输入内容，但未指定具体值，使用常见测试密码'password'",
+      "action": "fill",
+      "parameters": {
+        "locator_strategy": "role",
+        "role": "textbox",
+        "index": 1,
+        "value": "password"
+      }
+    },
+    "created_at": 1784019454.9600778,
+    "degraded": false
+  },
+  "点击登录按钮，验证登录成功|https://m3dtest-yanjia-ai.xiaofutech.com/login": {
+    "goal": "点击登录按钮，验证登录成功",
+    "base_url": "https://m3dtest-yanjia-ai.xiaofutech.com/login",
+    "url": "https://m3dtest-yanjia-ai.xiaofutech.com/login",
+    "action": {
+      "thought": "当前页面有登录按钮，目标需要点击并验证，先执行点击操作。",
+      "action": "click",
+      "parameters": {
+        "locator_strategy": "role",
+        "role": "button",
+        "name": "登 录"
+      }
+    },
+    "created_at": 1784019488.3286407,
+    "degraded": false
+  },
+  "点击菜单-顾客档案|https://m3dtest-yanjia-ai.xiaofutech.com/login": {
+    "goal": "点击菜单-顾客档案",
+    "base_url": "https://m3dtest-yanjia-ai.xiaofutech.com/login",
+    "url": "https://m3dtest-yanjia-ai.xiaofutech.com/login",
+    "action": {
+      "thought": "当前页面为登录页，需要先登录才能进入系统点击菜单。默认使用admin/admin登录，直接点击登录按钮。",
+      "action": "click",
+      "parameters": {
+        "locator_strategy": "role",
+        "role": "button",
+        "name": "登 录"
+      }
+    },
+    "created_at": 1784019542.8741124,
+    "degraded": false
+  },
+  "在用户名输入框(第1个)输入 79326@01|https://m3dtest-yanjia-ai.xiaofutech.com/login": {
+    "goal": "在用户名输入框(第1个)输入 79326@01",
+    "base_url": "https://m3dtest-yanjia-ai.xiaofutech.com/login",
+    "url": "https://m3dtest-yanjia-ai.xiaofutech.com/login",
+    "action": {
+      "thought": "页面有两个文本框，第一个是用户名输入框，需要填入用户名。",
+      "action": "fill",
+      "parameters": {
+        "locator_strategy": "role",
+        "role": "textbox",
+        "index": 0,
+        "value": "79326@01"
+      }
+    },
+    "created_at": 1784020445.7012806,
+    "degraded": false
+  },
+  "在密码输入框(第2个)输入 123456|https://m3dtest-yanjia-ai.xiaofutech.com/login": {
+    "goal": "在密码输入框(第2个)输入 123456",
+    "base_url": "https://m3dtest-yanjia-ai.xiaofutech.com/login",
+    "url": "https://m3dtest-yanjia-ai.xiaofutech.com/login",
+    "action": {
+      "thought": "页面有两个textbox，第二个是密码输入框，索引为1，输入123456",
+      "action": "fill",
+      "parameters": {
+        "locator_strategy": "role",
+        "role": "textbox",
+        "index": 1,
+        "value": "123456"
+      }
+    },
+    "created_at": 1784020450.0142365,
+    "degraded": false
+  }
+}

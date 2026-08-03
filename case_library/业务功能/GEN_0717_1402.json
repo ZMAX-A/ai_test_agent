@@ -1,0 +1,72 @@
+{
+  "case_id": "GEN_0717_1402",
+  "name": "顾客档案查询",
+  "module": "业务功能",
+  "version": 1,
+  "status": "draft",
+  "preconditions": "需配置 .env 登录凭证",
+  "start_url": "https://m3dtest-yanjia-ai.xiaofutech.com/login",
+  "source_task": "顾客档案查询",
+  "created_at": "2026-07-17T14:02:32",
+  "updated_at": "2026-07-17T14:02:32",
+  "steps": [
+    {
+      "step": 1,
+      "goal": "打开登录页面 https://m3dtest-yanjia-ai.xiaofutech.com/login",
+      "action": "finish",
+      "parameters": {},
+      "asserts": [
+        {
+          "type": "url",
+          "target": "https://m3dtest-yanjia-ai.xiaofutech.com/login"
+        }
+      ]
+    },
+    {
+      "step": 2,
+      "goal": "在用户名输入框(第1个)输入 79326@01",
+      "action": "fill",
+      "parameters": {
+        "locator_strategy": "role",
+        "role": "textbox",
+        "index": 0,
+        "value": "79326@01"
+      },
+      "asserts": []
+    },
+    {
+      "step": 3,
+      "goal": "在密码输入框(第2个)输入 123456",
+      "action": "fill",
+      "parameters": {
+        "locator_strategy": "role",
+        "role": "textbox",
+        "index": 1,
+        "value": "123456"
+      },
+      "asserts": []
+    },
+    {
+      "step": 4,
+      "goal": "点击登录按钮",
+      "action": "click",
+      "parameters": {
+        "locator_strategy": "role",
+        "role": "button",
+        "name": "登 录"
+      },
+      "asserts": []
+    },
+    {
+      "step": 5,
+      "goal": "点击菜单-顾客档案",
+      "action": "click",
+      "parameters": {
+        "locator_strategy": "role",
+        "role": "link",
+        "name": "顾客档案"
+      },
+      "asserts": []
+    }
+  ]
+}

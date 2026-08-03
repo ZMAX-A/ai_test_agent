@@ -1,0 +1,11 @@
+{
+  "name": "12306搜索（结构化步骤）",
+  "start_url": "https://www.baidu.com",
+  "mode": "steps",
+  "steps": [
+    {"step": 1, "goal": "打开百度首页", "assert": null},
+    {"step": 2, "goal": "在搜索框输入12306", "assert": null},
+    {"step": 3, "goal": "点击百度一下按钮", "assert": "URL包含wd=12306"}
+  ]
+}
+

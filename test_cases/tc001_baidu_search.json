@@ -1,0 +1,6 @@
+{
+  "name": "百度搜索世界杯",
+  "start_url": "https://www.baidu.com",
+  "mode": "auto",
+  "task": "打开百度，搜索世界杯，验证搜索结果中包含世界杯"
+}

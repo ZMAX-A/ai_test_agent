@@ -1,0 +1,6 @@
+{
+  "name": "百度登录页导航",
+  "start_url": "https://www.baidu.com",
+  "mode": "auto",
+  "task": "打开百度首页，点击登录按钮，验证跳转到登录页面"
+}
