@@ -31,6 +31,32 @@ class ProductionRegressionRunner(GenericTestRunner):
         self.auth_policy.validate()
         self.executor_factory = executor_factory
 
+    def _open_login_page(self, page, login_url: str) -> None:
+        """Open login and tolerate only evidence-backed load-event timeouts."""
+
+        load_event_timed_out = False
+        try:
+            page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
+        except PlaywrightTimeoutError:
+            if not self.auth_policy.is_login_url(str(page.url)):
+                raise
+            load_event_timed_out = True
+
+        page.locator(self.auth_policy.username_selector).first.wait_for(
+            state="visible", timeout=10000
+        )
+        page.locator(self.auth_policy.password_selector).first.wait_for(
+            state="visible", timeout=10000
+        )
+        page.locator(self.auth_policy.store_selector).first.wait_for(
+            state="visible", timeout=10000
+        )
+        if load_event_timed_out:
+            logger.warning(
+                "Login load event timed out, but required fields are visible: %s",
+                page.url,
+            )
+
     def _handle_preconditions(self, page, preconditions: str, login_url: str):
         if _precondition_mode(preconditions) != "auto_login":
             return super()._handle_preconditions(page, preconditions, login_url)
@@ -39,7 +65,7 @@ class ProductionRegressionRunner(GenericTestRunner):
         if not settings.LOGIN_USERNAME or not settings.LOGIN_PASSWORD:
             raise ValueError("Auto login credentials are not configured")
 
-        page.goto(login_url, wait_until="domcontentloaded", timeout=30000)
+        self._open_login_page(page, login_url)
         page.wait_for_timeout(1000)
         executor = self.executor_factory(
             page,

@@ -26,6 +26,15 @@ class _Notice:
     def is_visible(self, **_kwargs):
         return False
 
+class _ReadyLocator:
+    first = None
+
+    def __init__(self):
+        self.first = self
+
+    def wait_for(self, **_kwargs):
+        return None
+
 
 class _Page:
     def __init__(self):
@@ -37,6 +46,9 @@ class _Page:
 
     def wait_for_timeout(self, timeout):
         self.waits.append(timeout)
+
+    def locator(self, _selector):
+        return _ReadyLocator()
 
     def get_by_text(self, _text):
         return _Notice()

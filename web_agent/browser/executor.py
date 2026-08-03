@@ -188,6 +188,14 @@ class PolicyAwareBrowserExecutor(LoginGroundedSecureExecutor):
                     ".ant-select-dropdown:not(.ant-select-dropdown-hidden) "
                     ".ant-select-item-option"
                 )
+                try:
+                    options.first.wait_for(state="visible", timeout=5000)
+                except Exception:
+                    self.page.keyboard.press("Escape")
+                    return _fail(
+                        "ELEMENT_NOT_FOUND",
+                        "Store options did not become visible within 5000ms",
+                    )
                 rounds = max(options.count() + 2, 4)
                 matched = False
                 for _ in range(rounds):
