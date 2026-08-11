@@ -7,7 +7,11 @@ __pycache__/
 allure-results/
 screenshots/
 report/screenshots/
+report/benchmarks/
+report/training/
 memory/*.db
+memory/*.db-shm
+memory/*.db-wal
 
 .pytest_cache/
 .coverage

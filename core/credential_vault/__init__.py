@@ -18,6 +18,21 @@ CREDENTIAL_PATTERN = re.compile(
 )
 
 
+PII_PHONE_PATTERN = re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")
+PII_EMAIL_PATTERN = re.compile(
+    r"(?<![\w.+-])[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}(?![\w.-])",
+    re.ASCII,
+)
+SENSITIVE_QUERY_PATTERN = re.compile(
+    r"([?&](?:access_token|refresh_token|api_key|token|password|passwd|secret)=)"
+    r"([^&#\s]+)",
+    re.IGNORECASE,
+)
+BEARER_TOKEN_PATTERN = re.compile(
+    r"\bBearer\s+[A-Za-z0-9._~+/=-]+", re.IGNORECASE
+)
+
+
 def _credential(key: str = "") -> dict:
     if key:
         return settings.get_credential(key)
@@ -35,11 +50,23 @@ class CredentialVault:
 
     def sanitize_text(self, text: str) -> str:
         safe = str(text or "")
-        credential = _credential()
-        for field in ("username", "password"):
-            value = str(credential.get(field, "") or "")
-            if value:
-                safe = safe.replace(value, self.reference(field))
+        for key in ("", "invalid"):
+            credential = _credential(key)
+            for field in ("username", "password"):
+                value = str(credential.get(field, "") or "")
+                if value:
+                    safe = safe.replace(
+                        value, self.reference(field, key)
+                    )
+        safe = PII_PHONE_PATTERN.sub("{{redacted.phone}}", safe)
+        safe = PII_EMAIL_PATTERN.sub("{{redacted.email}}", safe)
+        safe = SENSITIVE_QUERY_PATTERN.sub(
+            lambda match: match.group(1) + "{{redacted.secret}}",
+            safe,
+        )
+        safe = BEARER_TOKEN_PATTERN.sub(
+            "Bearer {{redacted.token}}", safe
+        )
         return safe
 
     def sanitize(self, value: Any) -> Any:
@@ -76,4 +103,8 @@ class CredentialVault:
         return resolved
 
 
-__all__ = ["CREDENTIAL_PATTERN", "CredentialVault"]
+__all__ = [
+    "BEARER_TOKEN_PATTERN", "CREDENTIAL_PATTERN", "PII_EMAIL_PATTERN",
+    "PII_PHONE_PATTERN", "SENSITIVE_QUERY_PATTERN",
+    "CredentialVault",
+]

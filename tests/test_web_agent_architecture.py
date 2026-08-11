@@ -49,6 +49,16 @@ class WebAgentArchitectureTests(unittest.TestCase):
         ]
         filtered = filter_login_setup_trace(trace, "已登录")
         self.assertEqual(filtered, [{"goal": "进入顾客档案"}])
+    def test_login_module_preserves_submit_steps_in_standard_trace(self):
+        trace = [
+            {"goal": "输入 {{credential.password}}"},
+            {"goal": "点击登录按钮"},
+        ]
+        self.assertEqual(
+            filter_login_setup_trace(trace, "打开登录页面", module="账号登录"),
+            trace,
+        )
+
 
     def test_cli_defaults_to_explore_without_attribute_bug(self):
         self.assertEqual(_normalized_argv([]), ["explore"])

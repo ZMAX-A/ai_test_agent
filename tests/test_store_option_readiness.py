@@ -54,9 +54,11 @@ class _Page:
         self.options_ready = False
         self.active = 0
         self.selected = ""
+        self.role_calls = 0
         self.keyboard = _Keyboard(self)
 
     def get_by_role(self, _role):
+        self.role_calls += 1
         return _Node(self, "combo")
 
     def locator(self, selector):
@@ -95,6 +97,7 @@ class StoreOptionReadinessTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertTrue(page.options_ready)
         self.assertEqual(page.selected, "zwf1")
+        self.assertEqual(page.role_calls, 0)
 
 
 if __name__ == "__main__":

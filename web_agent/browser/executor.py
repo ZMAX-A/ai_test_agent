@@ -59,17 +59,19 @@ class PolicyAwareBrowserExecutor(LoginGroundedSecureExecutor):
         params = action_info.get("parameters", {})
         if action == "fill":
             semantic = self._login_field_semantic(params)
+            credential_key = str(params.get("credential_key", "") or "")
+            credential = settings.get_credential(credential_key)
             if semantic == "username":
                 return self._fill_login_field(
                     semantic,
                     self.auth_policy.username_selector,
-                    settings.LOGIN_USERNAME,
+                    str(credential.get("username", "") or ""),
                 )
             if semantic == "password":
                 return self._fill_login_field(
                     semantic,
                     self.auth_policy.password_selector,
-                    settings.LOGIN_PASSWORD,
+                    str(credential.get("password", "") or ""),
                 )
             return self._logged(
                 "fill",
@@ -82,7 +84,9 @@ class PolicyAwareBrowserExecutor(LoginGroundedSecureExecutor):
         if action == "select_option":
             return self._select_store(params)
         if action == "click" and self._is_login_submit(params):
-            return self._submit_and_wait()
+            return self._submit_and_wait(
+                expect_failure=bool(params.get("expect_failure"))
+            )
         return super().execute(action_info)
 
     def _login_field_semantic(self, params: dict) -> str:
@@ -172,9 +176,11 @@ class PolicyAwareBrowserExecutor(LoginGroundedSecureExecutor):
 
     def _store_combobox(self):
         try:
-            return self.page.get_by_role("combobox")
+            return self.page.locator(
+                self.auth_policy.store_selector
+            ).first
         except Exception:
-            return self.page.locator(self.auth_policy.store_selector).first
+            return self.page.get_by_role("combobox")
 
     def _select_store_by_keyboard_text(self, option_text: str) -> dict:
         def operation() -> dict:
@@ -304,7 +310,7 @@ class PolicyAwareBrowserExecutor(LoginGroundedSecureExecutor):
                     continue
         return labels
 
-    def _submit_and_wait(self) -> dict:
+    def _submit_and_wait(self, expect_failure: bool = False) -> dict:
         def operation() -> dict:
             before = str(self.page.url)
             try:
@@ -319,7 +325,7 @@ class PolicyAwareBrowserExecutor(LoginGroundedSecureExecutor):
                     self.auth_policy.password_selector
                 ).first.input_value()
                 stores = self._visible_selected_labels()
-                if not username or not password or not stores:
+                if (not username or not password or not stores) and not expect_failure:
                     return _fail(
                         "PRECONDITION_FAILED",
                         "Login submit blocked: required fields are incomplete",
@@ -328,27 +334,59 @@ class PolicyAwareBrowserExecutor(LoginGroundedSecureExecutor):
                 submit = self.page.locator(self.auth_policy.submit_selector).first
                 submit.wait_for(state="visible", timeout=3000)
                 submit.click(timeout=5000)
-                try:
-                    self.page.wait_for_function(
-                        "path => !window.location.pathname.includes(path)",
-                        arg=self.auth_policy.login_path,
-                        timeout=self.auth_policy.navigation_timeout_ms,
-                    )
-                except Exception:
-                    pass
-
-                after = str(self.page.url)
-                if after == before or self.auth_policy.is_login_url(after):
-                    errors = self.page.locator(
+                if expect_failure:
+                    feedback = self.page.locator(
                         ".ant-message-notice-content:visible, "
                         ".ant-form-item-explain-error:visible, "
                         "[role='alert']:visible"
-                    ).all_inner_texts()
-                    safe_errors = [
-                        self._vault.sanitize_text(text.strip())
-                        for text in errors
-                        if text.strip()
-                    ]
+                    ).first
+                    try:
+                        feedback.wait_for(
+                            state="visible",
+                            timeout=self.auth_policy.navigation_timeout_ms,
+                        )
+                    except Exception:
+                        self.page.wait_for_timeout(self.auth_policy.settle_ms)
+                else:
+                    try:
+                        self.page.wait_for_function(
+                            "path => !window.location.pathname.includes(path)",
+                            arg=self.auth_policy.login_path,
+                            timeout=self.auth_policy.navigation_timeout_ms,
+                        )
+                    except Exception:
+                        pass
+
+                after = str(self.page.url)
+                errors = self.page.locator(
+                    ".ant-message-notice-content:visible, "
+                    ".ant-form-item-explain-error:visible, "
+                    "[role='alert']:visible"
+                ).all_inner_texts()
+                safe_errors = [
+                    self._vault.sanitize_text(text.strip())
+                    for text in errors
+                    if text.strip()
+                ]
+                stayed_on_login = (
+                    after == before or self.auth_policy.is_login_url(after)
+                )
+                if expect_failure:
+                    if not stayed_on_login:
+                        return _fail(
+                            "POSTCONDITION_FAILED",
+                            "Negative login unexpectedly left the login page",
+                        )
+                    if not safe_errors:
+                        return _fail(
+                            "POSTCONDITION_FAILED",
+                            "Expected login rejection had no visible feedback",
+                        )
+                    return _ok(
+                        "Expected login rejection confirmed",
+                        {"toast_text": " | ".join(safe_errors)},
+                    )
+                if stayed_on_login:
                     suffix = f": {' | '.join(safe_errors)}" if safe_errors else ""
                     return _fail(
                         "POSTCONDITION_FAILED",
@@ -367,7 +405,11 @@ class PolicyAwareBrowserExecutor(LoginGroundedSecureExecutor):
             except Exception as exc:
                 return _fail("UNKNOWN_ERROR", f"Login submit failed: {exc}")
 
-        return self._logged("click", {"semantic": "login_submit"}, operation)
+        return self._logged(
+            "click",
+            {"semantic": "login_submit", "expect_failure": expect_failure},
+            operation,
+        )
 
 
 __all__ = ["PolicyAwareBrowserExecutor"]

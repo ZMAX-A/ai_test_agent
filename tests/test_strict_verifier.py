@@ -34,6 +34,29 @@ class _Page:
         return _Locator("顾客档案", True)
 
 
+class _Collection:
+    def __init__(self, nodes):
+        self.nodes = nodes
+
+    def count(self):
+        return len(self.nodes)
+
+    def nth(self, index):
+        return self.nodes[index]
+
+
+class _SelectPage(_Page):
+    def __init__(self, selected_text):
+        super().__init__(url="https://example.test/login", title="登录")
+        self.selected_text = selected_text
+
+    def locator(self, selector):
+        if "selection-item" in selector:
+            nodes = [_Locator(self.selected_text, True)] if self.selected_text else []
+            return _Collection(nodes)
+        return _Collection([])
+
+
 class StrictVerifierTests(unittest.TestCase):
     def test_typed_contract_requires_all_rules(self):
         criteria = '{"url_contains":"/customer","text_contains":"顾客档案"}'
@@ -66,6 +89,51 @@ class StrictVerifierTests(unittest.TestCase):
         )
         self.assertTrue(result.passed)
         self.assertIn("URL", result.evidence[0])
+
+    def test_select_with_visible_nonempty_readback_is_accepted(self):
+        result = StrictVerifierAgent().verify(
+            _SelectPage("测试门店"),
+            "选择门店",
+            action={"action": "select_option", "parameters": {}},
+            action_result={"success": True, "page_change": {}},
+        )
+        self.assertTrue(result.passed)
+        self.assertIn("回读", result.evidence[0])
+
+    def test_select_readback_must_match_requested_option(self):
+        result = StrictVerifierAgent().verify(
+            _SelectPage("other"),
+            "\u9009\u62e9\u95e8\u5e97",
+            action={
+                "action": "select_option",
+                "parameters": {"option_text": "requested"},
+            },
+            action_result={"success": True, "page_change": {}},
+        )
+        self.assertFalse(result.passed)
+
+    def test_select_without_readback_remains_rejected(self):
+        result = StrictVerifierAgent().verify(
+            _SelectPage(""),
+            "选择门店",
+            action={"action": "select_option", "parameters": {}},
+            action_result={"success": True, "page_change": {}},
+        )
+        self.assertFalse(result.passed)
+
+    def test_typed_navigation_requires_observed_url_change(self):
+        criteria = {"url_changed": True, "text_contains": ["顾客档案"]}
+        before = StrictVerifierAgent().verify(
+            _Page(), "跳转到顾客档案", criteria,
+            action_result=None,
+        )
+        after = StrictVerifierAgent().verify(
+            _Page(), "跳转到顾客档案", criteria,
+            action_result={"success": True, "page_change": {"url_changed": True}},
+        )
+        self.assertFalse(before.passed)
+        self.assertTrue(after.passed)
+        self.assertTrue(any("URL发生变化" in item for item in after.evidence))
 
 
 if __name__ == "__main__":

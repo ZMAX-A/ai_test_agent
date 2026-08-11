@@ -7,6 +7,7 @@
 
 import os, sys, json, re
 from datetime import datetime
+from urllib.parse import urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -20,6 +21,7 @@ def generate_standard_case(
     module: str = "",
     start_url: str = "",
     preconditions: str = "",
+    expected: str | dict = "",
 ) -> dict:
     """
     从探索 trace 转为 text 项目兼容的 16 列标准用例 dict。
@@ -30,7 +32,7 @@ def generate_standard_case(
     input_data_parts = []
     assert_type = ""
     verify_point = ""
-    expected = ""
+    generated_expected = ""
     steps_desc = []
 
     need_login = preconditions and ("登录" in preconditions or not preconditions.startswith("已"))
@@ -72,7 +74,17 @@ def generate_standard_case(
             operations.append("click")
 
         elif act_type == "fill":
-            css = act.get("css_selector", "") or _role_to_css(params, act_type)
+            value_ref = str(params.get("value", ""))
+            if any(token in value_ref for token in (
+                "credential.password", "credential.invalid.password"
+            )):
+                css = "input[type='password']"
+            elif any(token in value_ref for token in (
+                "credential.username", "credential.invalid.username"
+            )):
+                css = "input[type='text']"
+            else:
+                css = act.get("css_selector", "") or _role_to_css(params, act_type)
             locators.append(css)
             operations.append("input")
             input_data_parts.append(params.get("value", ""))
@@ -105,12 +117,58 @@ def generate_standard_case(
             if vp:
                 verify_point = vp
             if a_type in ("text",) and params.get("expect_text"):
-                expected = params["expect_text"]
+                generated_expected = params["expect_text"]
 
         elif act_type == "get_page_info":
             operations.append("check")
             locators.append("")
 
+    acceptance = expected
+    if isinstance(acceptance, str) and acceptance.strip().startswith("{"):
+        try:
+            acceptance = json.loads(acceptance)
+        except Exception:
+            pass
+    if isinstance(acceptance, dict):
+        url_values = acceptance.get("url_contains", [])
+        if not isinstance(url_values, list):
+            url_values = [url_values] if url_values else []
+        if url_values:
+            verify_point = str(url_values[0])
+            assert_type = "url_contains"
+        elif acceptance.get("url_changed"):
+            final_url = next((
+                str(entry.get("page_url", ""))
+                for entry in reversed(trace)
+                if entry.get("page_url")
+            ), "")
+            final_path = urlparse(final_url).path.rstrip("/")
+            if final_path:
+                verify_point = final_path
+                assert_type = "url_contains"
+            elif "/login" in start_url:
+                verify_point = "/login"
+                assert_type = "url_not_contains"
+        text_values = acceptance.get("text_contains", [])
+        if not isinstance(text_values, list):
+            text_values = [text_values] if text_values else []
+        text_values = [str(value) for value in text_values if value]
+        if text_values:
+            generated_expected = "、".join(text_values)
+            if not verify_point:
+                verify_point = " | ".join(text_values)
+                assert_type = (
+                    "text_contains_all" if len(text_values) > 1
+                    else "text_contains"
+                )
+    elif acceptance:
+        generated_expected = str(acceptance)
+        if "登录成功" in generated_expected:
+            verify_point = "/login"
+            assert_type = "url_not_contains"
+        elif not verify_point:
+            verify_point = generated_expected
+            assert_type = "text_contains"
     return {
         "用例ID": case_id,
         "case_id": case_id,
@@ -126,7 +184,7 @@ def generate_standard_case(
         "元素定位器": " | ".join(locators),
         "操作类型": " | ".join(operations),
         "输入数据": " | ".join(input_data_parts),
-        "期望结果": expected or "成功",
+        "期望结果": generated_expected or "成功",
         "验证点": verify_point,
         "断言类型": assert_type or "url_contains",
         "超时(秒)": "5",
@@ -141,8 +199,8 @@ def _role_to_css(params: dict, action: str = "") -> str:
     idx = params.get("index", "")
 
     if role == "textbox":
-        if idx:
-            return f"input[type='text']:nth-of-type({int(idx)+1})"
+        if idx in (1, "1"):
+            return "input[type='password']"
         return "input[type='text']"
     elif role == "button":
         if name:
@@ -188,11 +246,13 @@ def generate_and_save(
     module: str = "",
     preconditions: str = "",
     start_url: str = "",
+    expected: str | dict = "",
 ) -> str:
     """生成标准用例并同时写入 JSON 和 Excel，返回 JSON 路径"""
     case = generate_standard_case(
         trace=trace,
         case_id=case_id,
+        expected=expected,
         case_name=case_name,
         module=module,
         start_url=start_url,

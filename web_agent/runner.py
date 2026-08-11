@@ -37,6 +37,12 @@ from web_agent.browser import PolicyAwareBrowserExecutor
 FORMAL_AGENTS = (
     "planner", "coordinator", "executor", "verifier", "critic", "replanner"
 )
+SENSITIVE_MODULES = frozenset({
+    "顾客列表", "顾客详情", "影像阅览", "个人中心",
+})
+SENSITIVE_PATH_PREFIXES = (
+    "/customer", "/image", "/profile", "/personal",
+)
 LOGIN_SETUP_KEYWORDS = (
     "打开登录", "登录页面", "用户名输入", "账号输入", "密码输入",
     "输入用户名", "输入账号", "输入密码", "点击登录",
@@ -88,7 +94,11 @@ def default_dependencies(
     )
 
 
-def filter_login_setup_trace(trace: list[dict], preconditions: str) -> list[dict]:
+def filter_login_setup_trace(
+    trace: list[dict], preconditions: str, module: str = ""
+) -> list[dict]:
+    if str(module or "").strip() == "账号登录":
+        return trace
     if "登录" not in str(preconditions or ""):
         return trace
     filtered = [
@@ -109,6 +119,8 @@ class _TaskSession:
     world: TaskWorldModel
     blackboard: TaskBlackboard
     deadline: float
+    experience_context: str = ""
+    sensitive_context: bool = False
 
 
 class ProductionRunner:
@@ -126,6 +138,9 @@ class ProductionRunner:
         self.verifier = self.dependencies.verifier_factory()
         self.aria_sensor = self.dependencies.aria_sensor_factory()
         self.visual_sensor = self.dependencies.visual_sensor_factory()
+        self.model_api_disabled = os.getenv(
+            "WEB_AGENT_DISABLE_MODEL_API", ""
+        ).strip().lower() in {"1", "true", "yes", "on"}
 
     def capability_manifest(self) -> dict[str, list[str]]:
         return {
@@ -136,6 +151,13 @@ class ProductionRunner:
             "critic": [],
             "replanner": [],
         }
+
+    @staticmethod
+    def _is_sensitive_url(url: str) -> bool:
+        path = urlparse(str(url or "")).path.lower()
+        return any(
+            path.startswith(prefix) for prefix in SENSITIVE_PATH_PREFIXES
+        )
 
     @staticmethod
     def _clean_som_marks(page) -> None:
@@ -187,14 +209,25 @@ class ProductionRunner:
         return verification
 
     @staticmethod
-    def _merge_page_change(execution: dict, before: str, after: str) -> None:
+    def _merge_page_change(
+        execution: dict,
+        before: str,
+        after: str,
+        safe_before: str | None = None,
+        safe_after: str | None = None,
+    ) -> None:
         change = execution.setdefault("page_change", {})
-        if before != after:
+        changed = before != after
+        change["url_changed"] = changed
+        if changed:
             change.update({
                 "url_changed": True,
-                "old_url": before,
-                "new_url": after,
+                "old_url": before if safe_before is None else safe_before,
+                "new_url": after if safe_after is None else safe_after,
             })
+        else:
+            change.pop("old_url", None)
+            change.pop("new_url", None)
 
     def _run_step(self, session: _TaskSession, step_num: int,
                   step: dict) -> tuple[dict, dict]:
@@ -236,24 +269,49 @@ class ProductionRunner:
                 )
                 break
 
+            if (
+                not session.sensitive_context
+                and self._is_sensitive_url(session.page.url)
+            ):
+                session.sensitive_context = True
+                session.browser_executor.suppress_screenshots = True
+                session.blackboard.publish(
+                    "coordinator", "sensitive_context_enabled",
+                    reason="current URL entered a sensitive path",
+                )
             perception = self.coordinator.choose_perception(reasoning, fail_count)
+            route = perception.route
+            if self.model_api_disabled and route == "visual_sensor":
+                route = "aria_sensor"
+                session.blackboard.publish(
+                    "coordinator", "model_perception_blocked",
+                    reason="WEB_AGENT_DISABLE_MODEL_API 已启用",
+                )
+            if session.sensitive_context and route == "visual_sensor":
+                route = "aria_sensor"
+                session.blackboard.publish(
+                    "coordinator", "visual_blocked",
+                    reason="敏感业务页面禁止视觉数据外发",
+                )
             session.blackboard.publish(
                 "coordinator", "route",
-                route=perception.route, reason=perception.reason,
+                route=route, reason=perception.reason,
             )
             try:
-                if perception.route == "visual_sensor":
+                if route == "visual_sensor":
                     session.blackboard.model_calls += 1
-                page_state = self._perceive(session, perception.route, goal)
+                page_state = self._perceive(session, route, goal)
             except Exception as exc:
                 page_state = f"感知异常: {exc}"
+            page_state = self.vault.sanitize_text(page_state)
 
+            safe_url = self.vault.sanitize_text(session.page.url)
             title = self.vault.sanitize_text(session.page.title() or "")
-            reasoning.observe(page_state, session.page.url, title)
+            reasoning.observe(page_state, safe_url, title)
             session.blackboard.publish(
                 "perception", "page_observed",
-                sensor=perception.route,
-                url=session.page.url,
+                sensor=route,
+                url=safe_url,
                 title=title,
                 fingerprint=reasoning.observation_fingerprint,
             )
@@ -279,18 +337,40 @@ class ProductionRunner:
                 )
                 print(f"  [COORDINATOR] 确定性动作: {action['action']}")
             else:
+                if self.model_api_disabled:
+                    message = "模型API已禁用且当前目标缺少确定性动作"
+                    session.blackboard.publish(
+                        "coordinator", "model_decision_blocked",
+                        reason=message,
+                    )
+                    break
+                if session.sensitive_context:
+                    message = (
+                        "敏感页面缺少确定性动作，"
+                        "已阻止页面内容发送给模型"
+                    )
+                    session.blackboard.publish(
+                        "coordinator", "model_context_blocked", reason=message,
+                    )
+                    break
                 session.blackboard.model_calls += 1
                 action = self.executor_agent.ask({
                     "step_goal": goal,
                     "last_result": message,
                     "page_state": page_state,
-                    "page_url": session.page.url,
+                    "page_url": safe_url,
                     "page_title": title,
                     "tried_strategies": reasoning.next_directive(),
                     "reasoning_state": (
                         reasoning.prompt_context(round_num)
                         + "\n\n【多Agent共享黑板】\n"
                         + session.blackboard.compact_context()
+                        + (
+                            "\n\n【已验证历史经验】\n"
+                            "历史经验仅供参考，必须以当前页面和Verifier证据为准。\n"
+                            + session.experience_context
+                            if session.experience_context else ""
+                        )
                     ),
                 })
                 action = self.vault.tokenize_action(action)
@@ -303,6 +383,17 @@ class ProductionRunner:
                 session.blackboard.publish(
                     "coordinator", "action_repaired", note=note
                 )
+
+            if (
+                session.sensitive_context
+                and action.get("action") == "assert_visual"
+            ):
+                message = "敏感页面禁止视觉断言"
+                session.blackboard.publish(
+                    "coordinator", "action_blocked", reason=message,
+                )
+                fail_count += 1
+                continue
 
             if reasoning.repeated_on_same_observation(action):
                 message = "相同页面状态下禁止重复完全相同的动作"
@@ -376,9 +467,28 @@ class ProductionRunner:
                 session.page.wait_for_timeout(1000)
 
             after = session.page.url
-            self._merge_page_change(execution, before, after)
-            reasoning.record(round_num, action, execution, before, after)
-            session.world.record_action(action, execution, before, after)
+            safe_before = self.vault.sanitize_text(before)
+            safe_after = self.vault.sanitize_text(after)
+            execution = self.vault.sanitize(execution)
+            self._merge_page_change(
+                execution, before, after, safe_before, safe_after
+            )
+            if (
+                not session.sensitive_context
+                and self._is_sensitive_url(after)
+            ):
+                session.sensitive_context = True
+                session.browser_executor.suppress_screenshots = True
+                session.blackboard.publish(
+                    "coordinator", "sensitive_context_enabled",
+                    reason="navigation entered a sensitive path",
+                )
+            reasoning.record(
+                round_num, action, execution, safe_before, safe_after
+            )
+            session.world.record_action(
+                action, execution, safe_before, safe_after
+            )
             last_action_resolved = resolved
             last_result = execution
             message = str(execution.get("message", ""))
@@ -388,8 +498,8 @@ class ProductionRunner:
                 success=execution.get("success", False),
                 error_type=execution.get("error_type", ""),
                 message=message,
-                url_before=before,
-                url_after=after,
+                url_before=safe_before,
+                url_after=safe_after,
             )
 
             verification = self._verify(
@@ -415,7 +525,7 @@ class ProductionRunner:
             "goal": goal,
             "action": actions[-1].get("action") if actions else "finish",
             "parameters": actions[-1].get("parameters", {}) if actions else {},
-            "page_url": session.page.url,
+            "page_url": self.vault.sanitize_text(session.page.url),
             "all_actions": actions,
             "css_selector": css_selector,
             "completion_evidence": (
@@ -435,9 +545,18 @@ class ProductionRunner:
         return result, trace
 
     def run_case(self, task_name: str, steps: list[dict], start_url: str,
-                 module: str = "", preconditions: str = "") -> dict:
+                 module: str = "", preconditions: str = "",
+                 experience_context: str = "",
+                 sensitive_context: bool = False,
+                 source_case_id: str = "") -> dict:
         safe_task = self.vault.sanitize_text(task_name)
         safe_preconditions = self.vault.sanitize_text(preconditions)
+        safe_start_url = self.vault.sanitize_text(start_url)
+        safe_experience = self.vault.sanitize_text(experience_context)[:8000]
+        sensitive_context = bool(
+            sensitive_context or module in SENSITIVE_MODULES
+            or self._is_sensitive_url(start_url)
+        )
         system = urlparse(start_url).netloc or "unknown"
         blackboard = TaskBlackboard(
             task_id=f"production:{system}:{safe_task}",
@@ -449,9 +568,11 @@ class ProductionRunner:
         context_tokens = bind_task_context(runtime, world)
         blackboard.publish(
             "coordinator", "task_started",
-            start_url=start_url,
+            start_url=safe_start_url,
             step_count=len(steps),
             formal_agents=list(FORMAL_AGENTS),
+            verified_experience_available=bool(safe_experience),
+            sensitive_context=sensitive_context,
         )
         deadline = time.monotonic() + settings.EXPLORE_TASK_TIMEOUT_SECONDS
         results: list[dict] = []
@@ -462,6 +583,7 @@ class ProductionRunner:
             os.path.dirname(os.path.dirname(__file__)), "report", "screenshots"
         )
         os.makedirs(screenshot_dir, exist_ok=True)
+        session: _TaskSession | None = None
 
         try:
             with self.dependencies.playwright_factory() as playwright:
@@ -471,10 +593,17 @@ class ProductionRunner:
                 )
                 browser_context = browser.new_context(no_viewport=True)
                 page = browser_context.new_page()
-                page.goto(start_url, timeout=settings.PAGE_TIMEOUT)
+                page.goto(
+                    start_url,
+                    wait_until="domcontentloaded",
+                    timeout=settings.PAGE_TIMEOUT,
+                )
                 page.wait_for_timeout(settings.NAVIGATION_SETTLE_MS)
                 browser_executor = self.dependencies.browser_executor_factory(
                     page, self.visual_sensor
+                )
+                browser_executor.suppress_screenshots = bool(
+                    sensitive_context
                 )
                 session = _TaskSession(
                     page=page,
@@ -483,6 +612,8 @@ class ProductionRunner:
                     world=world,
                     blackboard=blackboard,
                     deadline=deadline,
+                    experience_context=safe_experience,
+                    sensitive_context=sensitive_context,
                 )
                 try:
                     for step_num, step in enumerate(steps, 1):
@@ -503,13 +634,19 @@ class ProductionRunner:
                             "coordinator", "step_failed", reason=result["msg"]
                         )
                         timestamp = datetime.now().strftime("%H%M%S")
-                        try:
-                            page.screenshot(path=os.path.join(
-                                screenshot_dir,
-                                f"production_step{step_num}_fail_{timestamp}.png",
-                            ))
-                        except Exception:
-                            pass
+                        if session.sensitive_context:
+                            blackboard.publish(
+                                "coordinator", "screenshot_skipped",
+                                reason="敏感业务页面不保存失败截图",
+                            )
+                        else:
+                            try:
+                                page.screenshot(path=os.path.join(
+                                    screenshot_dir,
+                                    f"production_step{step_num}_fail_{timestamp}.png",
+                                ))
+                            except Exception:
+                                pass
                         break
                 finally:
                     browser.close()
@@ -521,17 +658,35 @@ class ProductionRunner:
             "coordinator", "task_finished", status=blackboard.status
         )
         case_id = None
-        if overall_success:
+        final_sensitive_context = bool(
+            sensitive_context
+            or safe_start_url != start_url
+            or (session is not None and session.sensitive_context)
+        )
+        if overall_success and not final_sensitive_context:
             safe_module = re.sub(r'[\\/:*?"<>|]', "_", module or "通用")[:20]
             safe_name = re.sub(r'[\\/:*?"<>|]', "_", safe_task)[:30]
-            case_id = f"GEN_{safe_module}_{safe_name}"
+            safe_source_id = re.sub(
+                r'[\\/:*?"<>|]', "_", str(source_case_id or "")
+            )[:80]
+            case_id = safe_source_id or f"GEN_{safe_module}_{safe_name}"
             self.dependencies.case_writer(
-                trace=filter_login_setup_trace(trace, safe_preconditions),
+                trace=filter_login_setup_trace(
+                    trace, safe_preconditions, module=module
+                ),
                 case_id=case_id,
                 case_name=safe_task,
                 module=module,
                 preconditions=safe_preconditions,
-                start_url=start_url,
+                start_url=safe_start_url,
+                expected=(
+                    steps[-1].get("success_criteria", "") if steps else ""
+                ),
+            )
+        elif overall_success:
+            blackboard.publish(
+                "coordinator", "case_persistence_skipped",
+                reason="sensitive context is not persisted as a generated case",
             )
 
         collaboration = blackboard.summary()
@@ -549,6 +704,7 @@ class ProductionRunner:
 
 __all__ = [
     "FORMAL_AGENTS",
+    "SENSITIVE_MODULES",
     "ProductionRunner",
     "RunnerDependencies",
     "default_dependencies",

@@ -62,6 +62,7 @@ class PlaywrightExecutor:
             self.screenshot_dir = os.path.join(project_root, "screenshots")
         os.makedirs(self.screenshot_dir, exist_ok=True)
         self._last_url = ""
+        self.suppress_screenshots = False
 
     # ── 页面变化快照 ──────────────────────────────
 
@@ -101,6 +102,9 @@ class PlaywrightExecutor:
         return ctx
 
     def _capture_fail_screenshot(self, action_name: str) -> str:
+        if self.suppress_screenshots:
+            return ""
+
         try:
             ts = datetime.now().strftime("%H%M%S_%f")[:15]
             filename = f"fail_{ts}_{action_name}.png"
@@ -227,7 +231,6 @@ class PlaywrightExecutor:
                     self.page.keyboard.press("ArrowDown")
                     self.page.wait_for_timeout(200)
                     if option_text:
-                        found = False
                         for _ in range(30):
                             try:
                                 active = self.page.locator(":focus").first
@@ -240,14 +243,11 @@ class PlaywrightExecutor:
                                 pass
                             self.page.keyboard.press("ArrowDown")
                             self.page.wait_for_timeout(100)
-                        self.page.keyboard.press("Enter")
-                        self.page.wait_for_timeout(200)
-                        return _ok(f"键盘选到底(未匹配'{option_text}')，已选当前项", self._snapshot_page_change())
                     else:
                         self.page.keyboard.press("Enter")
                         self.page.wait_for_timeout(200)
                         return _ok("已选下拉第一项（键盘）", self._snapshot_page_change())
-                except Exception as e:
+                except Exception:
                     pass  # 键盘失败→文本兜底
 
                 # 3) 文本定位兜底

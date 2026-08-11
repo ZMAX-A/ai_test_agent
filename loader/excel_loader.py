@@ -23,6 +23,41 @@ except ImportError:
 
 _VAR_PATTERN = re.compile(r'\{\{(\w+)\}\}')
 
+def _load_curriculum_cases(filepath: str) -> list[dict] | None:
+    """Load the evidence curriculum through its stricter compiler when detected."""
+
+    from loader.curriculum_loader import HEADERS, load_curriculum
+
+    workbook = openpyxl.load_workbook(filepath, read_only=True, data_only=True)
+    try:
+        sheet = workbook.active
+        headers = {
+            str(cell.value or "").strip()
+            for cell in next(sheet.iter_rows(min_row=1, max_row=1))
+        }
+    finally:
+        workbook.close()
+    if not set(HEADERS).issubset(headers):
+        return None
+
+    catalog = load_curriculum(filepath)
+    return [
+        {
+            "case_id": case.case_id,
+            "case_name": case.case_name,
+            "preconditions": case.preconditions,
+            "steps_desc": "\n".join(case.steps),
+            "expected": case.expected,
+            "module": case.module,
+            "start_url": case.start_url,
+            "_steps_parsed": list(case.steps),
+            "_runner_steps": case.runner_steps(),
+        }
+        for case in catalog.cases
+        if case.enabled
+    ]
+
+
 
 def _resolve_env_vars(text: str) -> str:
     if not text or "{{" not in text:
@@ -73,6 +108,10 @@ def load_excel_cases(filepath: str) -> list[dict]:
         raise ImportError("需要 openpyxl 库: pip install openpyxl")
     if not os.path.isfile(filepath):
         raise FileNotFoundError(f"Excel 文件不存在: {filepath}")
+
+    curriculum_cases = _load_curriculum_cases(filepath)
+    if curriculum_cases is not None:
+        return curriculum_cases
 
     wb = openpyxl.load_workbook(filepath, data_only=True)
     ws = wb.active

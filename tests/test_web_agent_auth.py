@@ -1,10 +1,12 @@
 import io
 import os
+import tempfile
 import unittest
 from contextlib import redirect_stdout
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from config.settings import settings
+from executor.playwright_exec import PlaywrightExecutor
 from web_agent.auth import AuthenticationPolicy
 from web_agent.browser import PolicyAwareBrowserExecutor
 
@@ -116,6 +118,50 @@ class AuthenticationPolicyTests(unittest.TestCase):
             policy.validate()
 
 
+class PlaywrightExecutorTests(unittest.TestCase):
+    def test_named_option_mismatch_fails_closed(self):
+        page = MagicMock()
+        page.url = "https://example.test/form"
+        page.title.return_value = "Form"
+
+        combo = MagicMock()
+        focus = MagicMock()
+        focus.first = focus
+        focus.text_content.return_value = "different option"
+        missing = MagicMock()
+        missing.first = missing
+        missing.click.side_effect = RuntimeError("not found")
+        body = MagicMock()
+        body.inner_text.return_value = ""
+
+        page.get_by_role.return_value = combo
+        page.get_by_text.return_value = missing
+
+        def locate(selector):
+            if selector == ":focus":
+                return focus
+            if selector == "body":
+                return body
+            return missing
+
+        page.locator.side_effect = locate
+        with tempfile.TemporaryDirectory() as screenshot_dir:
+            executor = PlaywrightExecutor(
+                page,
+                visual_sensor=object(),
+                screenshot_dir=screenshot_dir,
+            )
+            result = executor.execute({
+                "action": "select_option",
+                "parameters": {
+                    "role": "combobox",
+                    "option_text": "requested option",
+                },
+            })
+        self.assertFalse(result["success"])
+        self.assertEqual(result["error_type"], "ELEMENT_NOT_FOUND")
+
+
 class PolicyAwareBrowserExecutorTests(unittest.TestCase):
     def test_login_flow_has_verified_postconditions_and_redacted_logs(self):
         page = _Page()
@@ -161,6 +207,14 @@ class PolicyAwareBrowserExecutorTests(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertEqual(result["error_type"], "PRECONDITION_FAILED")
 
+    def test_sensitive_context_suppresses_executor_screenshots(self):
+        executor = PolicyAwareBrowserExecutor(
+            _Page(), visual_sensor=object(), auth_policy=_policy()
+        )
+        executor.suppress_screenshots = True
+        self.assertEqual(
+            executor._capture_fail_screenshot("sensitive"), ""
+        )
 
 if __name__ == "__main__":
     unittest.main()

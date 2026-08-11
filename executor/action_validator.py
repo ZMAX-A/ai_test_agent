@@ -13,13 +13,13 @@ ACTION_SCHEMA: dict = {
     "click": {
         "required": [],
         "any_of": [("role",), ("som_index",)],
-        "optional": ["locator_strategy", "name", "index"],
+        "optional": ["locator_strategy", "name", "index", "expect_failure"],
         "description": "点击元素",
     },
     "fill": {
         "required": ["value"],
         "any_of": [("role",), ("som_index",)],
-        "optional": ["locator_strategy", "name", "index"],
+        "optional": ["locator_strategy", "name", "index", "credential_key"],
         "description": "输入框中填入文本",
     },
     "assert_text": {
@@ -170,6 +170,10 @@ def validate_action(action_info: dict) -> tuple[bool, str]:
                 return False, f"som_index 必须是数字，得到 {val!r}"
         elif key == "direction" and val not in ("down", "up"):
             return False, f"scroll direction 必须是 'down' 或 'up'，得到 {val!r}"
+        elif key == "expect_failure" and not isinstance(val, bool):
+            return False, f"expect_failure 必须是布尔值，得到 {val!r}"
+        elif key == "credential_key" and val not in ("", "invalid"):
+            return False, "credential_key 仅允许空值或 invalid"
 
     return True, ""
 

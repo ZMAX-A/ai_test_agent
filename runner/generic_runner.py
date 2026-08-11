@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from config.settings import settings
 from standard.store import StandardCaseStore
+from core.credential_vault import CredentialVault
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
 logger = logging.getLogger("generic_runner")
@@ -59,6 +60,7 @@ class StepExecutor:
         self.page = page
         m = re.match(r"(https?://[^/]+)", base_url)
         self.base_url = m.group(1) if m else base_url.rstrip("/")
+        self.vault = CredentialVault()
 
     def execute(self, locators_str: str, operations_str: str, data_str: str):
         if not operations_str or not operations_str.strip():
@@ -114,10 +116,14 @@ class StepExecutor:
 
     def _input(self, locator: str, text: str):
         if not locator: return
+        resolved = (
+            self.vault.resolve_text(text)
+            if "{{credential." in str(text or "") else text
+        )
         el = self.page.locator(locator).first
         el.wait_for(state="visible", timeout=10000)
-        el.fill(text)
-        logger.info(f"    输入: {text[:30]}")
+        el.fill(resolved)
+        logger.info(f"    输入: {self.vault.sanitize_text(resolved)[:30]}")
 
     def _click(self, locator: str):
         if not locator: return
@@ -267,10 +273,14 @@ class AssertionExecutor:
 
         if assert_type == "url_contains":
             self._url_contains(verify_point)
+        elif assert_type == "url_not_contains":
+            self._url_not_contains(verify_point)
         elif assert_type == "url_matches":
             self._url_matches(verify_point)
         elif assert_type == "text_contains":
             self._text_contains(verify_point, last_loc)
+        elif assert_type == "text_contains_all":
+            self._text_contains_all(verify_point, last_loc)
         elif assert_type == "text_equals":
             self._text_equals(verify_point, last_loc)
         elif assert_type in ("text_visible", "visible_text"):
@@ -303,6 +313,14 @@ class AssertionExecutor:
             logger.info(f"  OK body含: {kw}"); return True
         raise AssertionError(f"文本不包含「{kw}」")
 
+    def _text_contains_all(self, expected: str, locator: str) -> bool:
+        values = [value.strip() for value in expected.split("|") if value.strip()]
+        if not values:
+            raise AssertionError("text_contains_all 缺少验证文本")
+        for value in values:
+            self._text_contains(value, locator)
+        return True
+
     def _text_equals(self, expected: str, locator: str) -> bool:
         actual = self.page.locator(locator).first.inner_text() if locator else self.page.locator("body").inner_text()
         assert actual.strip() == expected.strip(), f"文本不等: 期望={expected}, 实际={actual[:80]}"
@@ -324,6 +342,12 @@ class AssertionExecutor:
         kw = self._extract_keyword(expected) or expected
         assert kw in self.page.url, f"URL不含「{kw}」, 当前: {self.page.url}"
         logger.info(f"  OK URL含: {kw}"); return True
+
+    def _url_not_contains(self, expected: str) -> bool:
+        kw = self._extract_keyword(expected) or expected
+        assert kw not in self.page.url, f"URL仍含「{kw}」, 当前: {self.page.url}"
+        logger.info(f"  OK URL不含: {kw}")
+        return True
 
     def _url_matches(self, pattern: str) -> bool:
         assert re.search(pattern, self.page.url), f"URL不匹配: {pattern}"

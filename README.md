@@ -9,7 +9,10 @@ python -m web_agent doctor
 python -m web_agent capabilities
 python -m web_agent explore
 python -m web_agent explore --headless
+python -m web_agent train --validate-only
+python -m web_agent train --headless --priority P0 --repeat 2
 python -m web_agent regression --headless
+python -m web_agent benchmark --headless --repeat 2
 ```
 
 自然语言任务：
@@ -92,4 +95,6 @@ python -B -m unittest discover -s tests -v
 
 - [生产架构](docs/ARCHITECTURE.md)
 - [运行手册](docs/RUNBOOK.md)
+- [Web Agent 评测](docs/EVALUATION.md)
+- [Web Agent 课程训练](docs/TRAINING.md)
 - [历史架构归档](docs/archive/README.md)

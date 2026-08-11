@@ -1,0 +1,23 @@
+{
+  "用例ID": "TC-LOGIN-005",
+  "case_id": "TC-LOGIN-005",
+  "模块": "账号登录",
+  "module": "账号登录",
+  "status": "active",
+  "start_url": "https://m3dtest-yanjia-ai.xiaofutech.com/login",
+  "测试场景": "登录失败-未选择门店",
+  "测试点": "4.点击登录",
+  "优先级": "P1",
+  "前置条件": "打开登录页面",
+  "操作步骤": "1.输入 {{credential.username}}\n2.输入 {{credential.password}}\n3.不选择门店\n4.点击登录",
+  "元素定位器": "input[type='text'] | input[type='password'] | button:has-text('登 录')",
+  "操作类型": "input | input | click",
+  "输入数据": "{{credential.username}} | {{credential.password}}",
+  "期望结果": "请选择门店",
+  "验证点": "请选择门店",
+  "断言类型": "text_contains",
+  "超时(秒)": "5",
+  "备注": "探索模式自动生成",
+  "updated_at": "2026-08-05T11:08:44",
+  "created_at": "2026-08-05T11:08:44"
+}
